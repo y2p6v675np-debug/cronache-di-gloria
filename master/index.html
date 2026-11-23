@@ -1,0 +1,158 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Master">
+<link rel="apple-touch-icon" href="../icona.png"><link rel="icon" href="../icona.png">
+<title>Cronache di Gloria · Master</title>
+<style>
+:root{--bg:#eceef1;--sf:#fbfbfc;--sf2:#f0f2f5;--ink:#18202b;--mut:#596678;--line:#d3d9e0;--brass:#8c5f0e;--ember:#c0412a}
+@media (prefers-color-scheme:dark){:root{--bg:#0d131a;--sf:#151d27;--sf2:#1c2631;--ink:#ebe6d9;--mut:#93a1b3;--line:#2a3745;--brass:#e0b45a;--ember:#ee6a4b}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:440px;margin:0 auto;padding:calc(28px + env(safe-area-inset-top,0px)) 16px 40px}
+h1{font:700 26px/1.15 Georgia,"Palatino Linotype",serif;color:var(--brass);text-align:center;margin:0 0 4px}
+.sub{text-align:center;color:var(--mut);margin:0 0 22px}
+.card{background:var(--sf);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:10px 0 4px}
+input,textarea{width:100%;min-height:46px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--sf2);color:var(--ink);font-size:16px}
+textarea{min-height:200px;font:12px/1.4 ui-monospace,Menlo,monospace}
+button{width:100%;min-height:46px;margin-top:14px;border:0;border-radius:12px;background:var(--brass);color:#fff;font-weight:700;font-size:15px}
+button.sec{background:var(--sf2);color:var(--ink);border:1px solid var(--line)}
+.msg{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--sf2);border-left:3px solid var(--brass);font-size:14px}
+.msg.bad{border-left-color:var(--ember)}
+ol{padding-left:20px;margin:6px 0}li{margin:4px 0}
+.hide{display:none}
+</style></head><body><main>
+<h1>Cronache di Gloria</h1><p class="sub">Area del Master</p>
+<section class="card hide" id="s-login">
+  <label for="em">Email</label><input id="em" type="email" autocomplete="username" inputmode="email">
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+  <button id="go">Entra</button>
+  <button class="sec" id="forgot">Ho dimenticato la password</button>
+</section>
+<section class="card hide" id="s-rules">
+  <b>Ultimo passo, solo la prima volta</b>
+  <ol><li>Tocca <b>Copia le regole</b>.</li><li>In Firebase apri <b>Firestore Database → Regole</b>.</li><li>Cancella tutto il testo, incolla e premi <b>Pubblica</b>.</li><li>Torna qui e tocca <b>Fatto, continua</b>.</li></ol>
+  <textarea id="rules" readonly></textarea>
+  <button id="copyrules">Copia le regole</button>
+  <button class="sec" id="rulesdone">Fatto, continua</button>
+</section>
+<section class="card hide" id="s-key">
+  <b>Chiave d'installazione</b>
+  <p>Incolla la chiave che ti ha dato Claude in chat. Serve una volta sola: poi la ricorda il tuo account.</p>
+  <input id="ik" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-…">
+  <button id="keygo">Conferma</button>
+</section>
+<div class="msg hide" id="msg"></div>
+</main>
+<script>/* Collegamento a Firebase (REST, senza librerie esterne) */
+(function(){
+  const KEY="AIzaSyBgzX5UKMrkTE8vZ8mnQA9LV_ceih_vaG0",PROJ="cronache-di-gloria";
+  const ID="https://identitytoolkit.googleapis.com/v1/",TOK="https://securetoken.googleapis.com/v1/token?key="+KEY;
+  const DOC="https://firestore.googleapis.com/v1/projects/"+PROJ+"/databases/(default)/documents/";
+  const err=(code,msg)=>Object.assign(new Error(msg||code),{code});
+  function store(sk){return{
+    get(){try{return JSON.parse(localStorage.getItem(sk)||"null")}catch(e){return null}},
+    set(v){try{v?localStorage.setItem(sk,JSON.stringify(v)):localStorage.removeItem(sk)}catch(e){}}}}
+  async function post(url,body){
+    let r;try{r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}catch(e){throw err("OFFLINE")}
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw err((j.error&&j.error.message)||("HTTP_"+r.status));return j}
+  function session(sk){
+    const st=store(sk);
+    const keep=j=>{const s={id:j.idToken||j.id_token,rt:j.refreshToken||j.refresh_token,exp:Date.now()+((+(j.expiresIn||j.expires_in)||3600)-60)*1000,
+      uid:j.localId||j.user_id,email:j.email||(st.get()||{}).email||""};st.set(s);return s};
+    async function token(){const s=st.get();if(!s)return null;
+      if(s.exp>Date.now())return s.id;
+      let r;try{r=await fetch(TOK,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(s.rt)})}catch(e){throw err("OFFLINE")}
+      const j=await r.json().catch(()=>({}));if(!r.ok){st.set(null);return null}
+      return keep(j).id}
+    return{
+      info:()=>st.get(),
+      token,
+      async anon(){const t=await token();if(t)return t;return keep(await post(ID+"accounts:signUp?key="+KEY,{returnSecureToken:true})).id},
+      async login(email,pw){return keep(await post(ID+"accounts:signInWithPassword?key="+KEY,{email,password:pw,returnSecureToken:true}))},
+      async reset(email){await post(ID+"accounts:sendOobCode?key="+KEY,{requestType:"PASSWORD_RESET",email})},
+      logout(){st.set(null)}};
+  }
+  const enc=o=>{const f={};for(const k in o)f[k]={stringValue:String(o[k]??"")};return{fields:f}};
+  const dec=d=>{const o={};const f=(d&&d.fields)||{};for(const k in f){const v=f[k];o[k]=v.stringValue??v.integerValue??v.booleanValue??""}if(d&&d.name)o._id=d.name.split("/").pop();return o};
+  async function req(tok,method,path,body){
+    let r;try{r=await fetch(DOC+path,{method,headers:Object.assign({Authorization:"Bearer "+tok},body?{"Content-Type":"application/json"}:{}),body:body?JSON.stringify(body):undefined})}catch(e){throw err("OFFLINE")}
+    if(r.status===404)return null;
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw err(r.status===403?"PERMISSION_DENIED":((j.error&&j.error.status)||("HTTP_"+r.status)));return j}
+  window.FBX={
+    session,
+    async get(tok,path){const j=await req(tok,"GET",path);return j?dec(j):null},
+    async set(tok,path,obj){await req(tok,"PATCH",path,enc(obj));return true},
+    async del(tok,path){await req(tok,"DELETE",path);return true},
+    async list(tok,coll){const out=[];let pt="";for(let i=0;i<20;i++){const j=await req(tok,"GET",coll+"?pageSize=300"+(pt?"&pageToken="+encodeURIComponent(pt):""));if(!j)break;(j.documents||[]).forEach(d=>out.push(dec(d)));pt=j.nextPageToken;if(!pt)break}return out},
+    async sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+  };
+})();
+</script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const SES=FBX.session("cdg-fb-m");
+const show=id=>{["s-login","s-rules","s-key"].forEach(x=>$(x).classList.toggle("hide",x!==id))};
+const msg=(t,bad)=>{const m=$("msg");if(!t){m.classList.add("hide");return}m.textContent=t;m.classList.remove("hide");m.classList.toggle("bad",!!bad)};
+const hex=h=>new Uint8Array((h.match(/[0-9a-f]{2}/g)||[]).map(x=>parseInt(x,16)));
+const cleanKey=k=>String(k||"").toLowerCase().replace(/[^0-9a-f]/g,"");
+async function decryptApp(k){
+  const key=await crypto.subtle.importKey("raw",hex(k),"AES-GCM",false,["decrypt"]);
+  const r=await fetch("app.enc",{cache:"no-cache"});if(!r.ok)throw Object.assign(new Error("app"),{code:"NOAPP"});
+  const b=new Uint8Array(await r.arrayBuffer());
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b.slice(0,12)},key,b.slice(12));
+  return new TextDecoder().decode(pt)}
+const RULES=email=>`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isMaster() {
+      return request.auth != null && request.auth.token.email == '${email}';
+    }
+    match /players/{id} {
+      allow get: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['name', 'summary', 'data', 'updated'])
+        && request.resource.data.data.size() < 900000;
+      allow list, delete: if isMaster();
+    }
+    match /master/{doc} {
+      allow read, write: if isMaster();
+    }
+  }
+}`;
+async function openApp(k,tok){
+  msg("Apro l'area del Master…");
+  let html;try{html=await decryptApp(k)}catch(e){try{localStorage.removeItem("cdg-mk")}catch(x){}throw Object.assign(new Error("key"),{code:e.code||"BADKEY"})}
+  try{localStorage.setItem("cdg-mk",k)}catch(e){}
+  if(tok){try{const st=await FBX.get(tok,"master/state");if(st&&st.data){const o=JSON.parse(st.data);for(const n in o)try{localStorage.setItem(n,o[n])}catch(e){}}}catch(e){}}
+  document.open();document.write(html);document.close()}
+async function start(){
+  msg("");
+  let tok=null;try{tok=await SES.token()}catch(e){
+    const k=localStorage.getItem("cdg-mk");if(k&&SES.info()){try{await openApp(k,null);return}catch(x){}}
+    show("s-login");msg("Serve la connessione a internet.",true);return}
+  if(!tok){show("s-login");return}
+  let sec;
+  try{sec=await FBX.get(tok,"master/secret")}catch(e){
+    if(e.code==="PERMISSION_DENIED"){$("rules").value=RULES((SES.info()||{}).email||"");show("s-rules");return}
+    const k=localStorage.getItem("cdg-mk");if(k){try{await openApp(k,null);return}catch(x){}}
+    show("s-login");msg("Non riesco a collegarmi. Riprova tra poco.",true);return}
+  if(!sec||!sec.k){show("s-key");return}
+  try{await openApp(sec.k,tok)}catch(e){show("s-key");msg("La chiave salvata non funziona: incollala di nuovo.",true)}}
+$("go").onclick=async()=>{const em=$("em").value.trim(),pw=$("pw").value;if(!em||!pw){msg("Scrivi email e password.",true);return}
+  msg("Accesso…");try{await SES.login(em,pw);$("pw").value="";start()}catch(e){
+    const c=e.code||"";msg(/INVALID|PASSWORD|EMAIL_NOT_FOUND|USER_DISABLED/.test(c)?"Email o password non corrette.":c==="OFFLINE"?"Serve la connessione a internet.":/TOO_MANY/.test(c)?"Troppi tentativi: aspetta qualche minuto.":"Accesso non riuscito ("+c+").",true)}};
+$("pw").addEventListener("keydown",e=>{if(e.key==="Enter")$("go").click()});
+$("forgot").onclick=async()=>{const em=$("em").value.trim();if(!em){msg("Scrivi prima la tua email.",true);return}
+  try{await SES.reset(em);msg("Ti ho mandato un'email per scegliere una nuova password.")}catch(e){msg("Non riesco a mandare l'email. Controlla l'indirizzo.",true)}};
+$("copyrules").onclick=async()=>{const t=$("rules");let ok=false;try{await navigator.clipboard.writeText(t.value);ok=true}catch(e){}
+  if(!ok){try{t.removeAttribute("readonly");t.focus();t.select();ok=document.execCommand("copy");t.setAttribute("readonly","")}catch(e){}}
+  msg(ok?"Regole copiate. Ora incollale in Firebase e premi Pubblica.":"Tieni premuto sul testo, Seleziona tutto e Copia.",!ok)};
+$("rulesdone").onclick=()=>{msg("Controllo…");start()};
+$("keygo").onclick=async()=>{const k=cleanKey($("ik").value);if(k.length!==32){msg("La chiave non è completa: copiala di nuovo dalla chat.",true);return}
+  msg("Controllo la chiave…");
+  try{await decryptApp(k)}catch(e){msg("Questa chiave non è giusta.",true);return}
+  try{const tok=await SES.token();await FBX.set(tok,"master/secret",{k});await openApp(k,tok)}catch(e){msg("Non riesco a salvare la chiave. Riprova.",true)}};
+start();
+})();
+</script></body></html>

@@ -1,4 +1,49 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cronache di Gloria"><link rel="apple-touch-icon" href="icona.png"><link rel="icon" href="icona.png"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cronache di Gloria"><link rel="apple-touch-icon" href="icona.png"><link rel="icon" href="icona.png"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body><script>/* Collegamento a Firebase (REST, senza librerie esterne) */
+(function(){
+  const KEY="AIzaSyBgzX5UKMrkTE8vZ8mnQA9LV_ceih_vaG0",PROJ="cronache-di-gloria";
+  const ID="https://identitytoolkit.googleapis.com/v1/",TOK="https://securetoken.googleapis.com/v1/token?key="+KEY;
+  const DOC="https://firestore.googleapis.com/v1/projects/"+PROJ+"/databases/(default)/documents/";
+  const err=(code,msg)=>Object.assign(new Error(msg||code),{code});
+  function store(sk){return{
+    get(){try{return JSON.parse(localStorage.getItem(sk)||"null")}catch(e){return null}},
+    set(v){try{v?localStorage.setItem(sk,JSON.stringify(v)):localStorage.removeItem(sk)}catch(e){}}}}
+  async function post(url,body){
+    let r;try{r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}catch(e){throw err("OFFLINE")}
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw err((j.error&&j.error.message)||("HTTP_"+r.status));return j}
+  function session(sk){
+    const st=store(sk);
+    const keep=j=>{const s={id:j.idToken||j.id_token,rt:j.refreshToken||j.refresh_token,exp:Date.now()+((+(j.expiresIn||j.expires_in)||3600)-60)*1000,
+      uid:j.localId||j.user_id,email:j.email||(st.get()||{}).email||""};st.set(s);return s};
+    async function token(){const s=st.get();if(!s)return null;
+      if(s.exp>Date.now())return s.id;
+      let r;try{r=await fetch(TOK,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(s.rt)})}catch(e){throw err("OFFLINE")}
+      const j=await r.json().catch(()=>({}));if(!r.ok){st.set(null);return null}
+      return keep(j).id}
+    return{
+      info:()=>st.get(),
+      token,
+      async anon(){const t=await token();if(t)return t;return keep(await post(ID+"accounts:signUp?key="+KEY,{returnSecureToken:true})).id},
+      async login(email,pw){return keep(await post(ID+"accounts:signInWithPassword?key="+KEY,{email,password:pw,returnSecureToken:true}))},
+      async reset(email){await post(ID+"accounts:sendOobCode?key="+KEY,{requestType:"PASSWORD_RESET",email})},
+      logout(){st.set(null)}};
+  }
+  const enc=o=>{const f={};for(const k in o)f[k]={stringValue:String(o[k]??"")};return{fields:f}};
+  const dec=d=>{const o={};const f=(d&&d.fields)||{};for(const k in f){const v=f[k];o[k]=v.stringValue??v.integerValue??v.booleanValue??""}if(d&&d.name)o._id=d.name.split("/").pop();return o};
+  async function req(tok,method,path,body){
+    let r;try{r=await fetch(DOC+path,{method,headers:Object.assign({Authorization:"Bearer "+tok},body?{"Content-Type":"application/json"}:{}),body:body?JSON.stringify(body):undefined})}catch(e){throw err("OFFLINE")}
+    if(r.status===404)return null;
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw err(r.status===403?"PERMISSION_DENIED":((j.error&&j.error.status)||("HTTP_"+r.status)));return j}
+  window.FBX={
+    session,
+    async get(tok,path){const j=await req(tok,"GET",path);return j?dec(j):null},
+    async set(tok,path,obj){await req(tok,"PATCH",path,enc(obj));return true},
+    async del(tok,path){await req(tok,"DELETE",path);return true},
+    async list(tok,coll){const out=[];let pt="";for(let i=0;i<20;i++){const j=await req(tok,"GET",coll+"?pageSize=300"+(pt?"&pageToken="+encodeURIComponent(pt):""));if(!j)break;(j.documents||[]).forEach(d=>out.push(dec(d)));pt=j.nextPageToken;if(!pt)break}return out},
+    async sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+  };
+})();
+</script>
 <title>Scheda Cronache di Gloria</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Inter:wght@400;500;600;700&display=swap">
@@ -264,7 +309,7 @@ fixState(S);
 let HIST=[],HLAST="",HT=0;
 const hkey=()=>JSON.stringify(Object.assign({},S,{tab:"",photo:""}));
 const hreset=()=>{HIST=[];HLAST=hkey();HT=0};
-const save=()=>{try{localStorage.setItem(CK(ROSTER.cur),JSON.stringify(S))}catch(e){}
+const save=()=>{try{localStorage.setItem(CK(ROSTER.cur),JSON.stringify(S))}catch(e){}try{cloudSoon()}catch(e){}
   const j=hkey();if(j!==HLAST){const n=Date.now();if(n-HT>900){HIST.push(HLAST);if(HIST.length>60)HIST.shift()}HT=n;HLAST=j;try{updUndo()}catch(e){}}};
 function undoLast(){if(!HIST.length)return false;const tab=S.tab,o=JSON.parse(HIST.pop());o.tab=tab;o.photo=S.photo;S=fixState(o);HLAST=hkey();HT=0;
   try{localStorage.setItem(CK(ROSTER.cur),JSON.stringify(S))}catch(e){}return true}
@@ -511,7 +556,8 @@ function tabEroe(){
   const w=C.warns.map(x=>`<div class="note bad">${esc(x)}</div>`).join("");
   return `<section class="card prof"><button class="ph" data-photo aria-label="${S.photo?"Cambia la foto":"Carica una foto"}">${S.photo?`<img src="${S.photo}" alt="">`:window.pimg&&pimg(S.race)?pimg(S.race).replace('class="pimg"','class="pdef"'):`<span><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.4"/></svg>Foto</span>`}</button>
   <div class="pi"><div class="pn">${esc(S.name||"Senza nome")}</div><div class="ps">${esc(S.race)} · ${esc(S.cls)}</div><div class="ps">Livello ${C.lvl} · ${C.pvMax} PV</div>${S.start?`<div class="ps">Parte da ${esc(S.start)}</div>`:""}<button class="ghost sm" data-pt="open">Crea il ritratto</button><button class="ghost sm" data-paste>Incolla immagine</button>${S.photo?`<button class="ghost sm" data-photo-del>Togli foto</button>`:`<span class="xs mut">Tocca il riquadro per caricare una foto.</span>`}</div>
-  <input type="file" id="photoin" accept="image/*" hidden></section>${w}
+  <input type="file" id="photoin" accept="image/*" hidden></section>${w}${cloudCard()}
+  <section class="card"><h2>Invia al Master</h2><p class="xs mut">Manda al Master la tua scheda aggiornata (per esempio su WhatsApp). Lui la vede nella sua app; la tua scheda resta qui.</p><button class="btn" style="width:100%" data-act="tomaster">Invia la scheda al Master</button></section>
   <section class="card"><h2>Caratteristiche</h2><div class="grid g3">${stats}</div>
    <p class="xs mut" style="margin-top:10px">Tocca una caratteristica per tirare d20 + modificatore. Per riuscire il totale deve superare la DC.</p></section>
   <section class="card"><h2>In breve</h2><div class="grid g2">
@@ -747,6 +793,12 @@ function act(a,el,ev){
   case "dcset":if(LR){LR.dc=num(d.v);renderRoll()}break;
   case "reroll":if(LR)doRoll({...LR,dm:null});break;
   case "dmgroll":if(LR&&LR.dmg){LR.dm=rollDice(LR.dmg.expr);vib(14);renderRoll()}break;
+  case "tomaster":sendToMaster();break;
+  case "cloudon":cloudOnSheet();break;
+  case "cloudpin":cloudPin();break;
+  case "cloudretry":cloudPush();break;
+  case "cloudrec":cloudRecSheet();break;
+  case "cloudget":cloudGet();break;
   case "rstat":rollStat(d.k);break;
   case "rskill":rollSkill(i);break;
   case "init":doRoll({title:"Iniziativa",init:1,mod:C.ib.init||0,kind:"prova",dc:null,sub:C.ib.init?"oggetti "+sgn(C.ib.init):""});break;
@@ -1230,7 +1282,7 @@ const BOOKS={"libro-regole": {"title": "Libro delle Regole", "pages": 49, "pdf":
     const rows=ROSTER.ids.map(id=>{
       const c=id===ROSTER.cur?S:readChar(id);if(!c)return"";
       return `<div class="chr ${id===ROSTER.cur?"cur":""}"><button class="o" data-co="${id}">${c.photo?`<img src="${c.photo}" alt="">`:`<i class="av">${ES((c.name||"?").trim().charAt(0).toUpperCase()||"?")}</i>`}<span class="tx"><b>${ES(c.name||"Senza nome")}</b><span>${c.blank?"Da creare":ES(c.race)+" · "+ES(c.cls)+" · Liv. "+c.lvl}${id===ROSTER.cur?" · aperto":""}</span></span></button><button class="x" data-cd="${id}">Elimina</button></div>`}).join("");
-    o.innerHTML=`<div class="ch-h"><h1>I miei personaggi</h1><button class="btn sec" data-cc>Chiudi</button></div><div class="ch-l"><button class="btn" style="width:100%;margin-bottom:14px" data-cn>+ Nuova scheda</button>${rows}<p class="xs mut">Ogni scheda si salva da sola su questo dispositivo. Tocca un personaggio per aprirlo. Per eliminarne uno tocca due volte «Elimina».</p></div>`;
+    o.innerHTML=`<div class="ch-h"><h1>I miei personaggi</h1><button class="btn sec" data-cc>Chiudi</button></div><div class="ch-l"><button class="btn" style="width:100%;margin-bottom:14px" data-cn>+ Nuova scheda</button>${window.FBX?`<button class="btn sec" style="width:100%;margin:-6px 0 14px" data-act="cloudrec">Recupera personaggio salvato online</button>`:""}${rows}<p class="xs mut">Ogni scheda si salva da sola su questo dispositivo. Tocca un personaggio per aprirlo. Per eliminarne uno tocca due volte «Elimina».</p></div>`;
   }
   function open(){save();draw();o.classList.add("on");try{closeSheet()}catch(e){}}
   function close(){o.classList.remove("on")}
@@ -1337,7 +1389,7 @@ const BOOKS={"libro-regole": {"title": "Libro delle Regole", "pages": 49, "pdf":
     const s=step();const bk=S.inv;if(s>=6){S.inv=[];applyKit(S)}C=calc();const good=ok(s);
     const dots=`<div class="wz-dots">${names.map((_,i)=>`<i class="${i<=s?"on":""}"></i>`).join("")}</div>`;
     const nav=`<div class="wz-nav">${s>0?`<button class="btn sec" data-wz="go" data-d="-1">‹ Indietro</button>`:""}${s<N-1?`<button class="btn" data-wz="go" data-d="1" ${good?"":"data-no"}>Avanti ›</button>`:`<button class="btn" data-wz="fin">Inizia l'avventura</button>`}</div>`;
-    const html=`<section class="card"><div class="xs mut" style="text-transform:uppercase;letter-spacing:.08em">Creazione del personaggio · passo ${s+1} di ${N}</div><h2 style="margin-top:2px">${names[s]}</h2><button class="btn sec" data-wz="auto" style="width:100%;margin:8px 0 4px">🎲 Personaggio automatico</button>${dots}${nav}${body(s)}${s<N-1?`<div style="margin-top:12px">${nav}</div>`:""}</section>`;S.inv=bk;return html}
+    const html=`<section class="card"><div class="xs mut" style="text-transform:uppercase;letter-spacing:.08em">Creazione del personaggio · passo ${s+1} di ${N}</div><h2 style="margin-top:2px">${names[s]}</h2><button class="btn sec" data-wz="auto" style="width:100%;margin:8px 0 4px">🎲 Personaggio automatico</button>${window.FBX&&s===0?`<button class="btn ghost" data-act="cloudrec" style="width:100%;margin:4px 0">Ho già un personaggio salvato online</button>`:""}${dots}${nav}${body(s)}${s<N-1?`<div style="margin-top:12px">${nav}</div>`:""}</section>`;S.inv=bk;return html}
   const redraw=()=>{save();render(1)};
   document.addEventListener("click",e=>{
     const b=e.target.closest("[data-wz]");if(!b||!S.blank)return;
@@ -1368,6 +1420,89 @@ const BOOKS={"libro-regole": {"title": "Libro delle Regole", "pages": 49, "pdf":
   try{if(S.blank)render()}catch(e){}
 })();
 
+
+
+/* ---------- salvataggio online (solo sul sito) ---------- */
+const CLOUD=window.FBX?FBX.session("cdg-fb-p"):null;
+let cloudT=null,CST={busy:false,err:"",at:0};
+const normName=x=>String(x||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/\s+/g," ").trim();
+const cloudId=async(n,pin)=>"p"+(await FBX.sha(normName(n)+"|"+pin)).slice(0,40);
+async function cloudPush(){if(!CLOUD||!S.cloud||!S.cloud.id)return;clearTimeout(cloudT);cloudT=null;
+  CST.busy=true;updCloud();const me=S;
+  try{const t=await CLOUD.anon();
+    await FBX.set(t,"players/"+me.cloud.id,{name:me.name||"",summary:JSON.stringify(masterData()),data:JSON.stringify(me),updated:String(Date.now())});
+    CST={busy:false,err:"",at:Date.now()}}catch(e){CST={busy:false,err:e.code||"ERR",at:CST.at}}
+  updCloud()}
+function cloudSoon(){if(!CLOUD||!S.cloud)return;clearTimeout(cloudT);cloudT=setTimeout(cloudPush,1500)}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&cloudT)cloudPush()});
+window.addEventListener("online",()=>{if(CLOUD&&S.cloud&&CST.err)cloudPush()});
+const hhmm=t=>{try{return new Date(t).toLocaleTimeString("it-IT",{hour:"2-digit",minute:"2-digit"})}catch(e){return""}};
+function cloudInner(){
+  if(!S.cloud)return `<h2>Salvataggio online</h2><p class="sm">Ora il personaggio è salvato solo su questo telefono. Attiva il salvataggio online: il Master vede la tua scheda e, se cambi telefono o si cancella, la recuperi con il nome e un PIN.</p><button class="btn" style="width:100%" data-act="cloudon">Attiva il salvataggio online</button>`;
+  const bad=!!CST.err,st=bad?(CST.err==="OFFLINE"?"Senza connessione: salvo appena torna la rete.":"Non riesco a salvare online in questo momento."):CST.busy?"Salvataggio in corso…":CST.at?`✓ Salvato online alle ${hhmm(CST.at)}`:"✓ Salvataggio online attivo";
+  return `<h2>Salvataggio online</h2><div class="note${bad?" bad":""}">${st}</div><p class="xs mut">Il Master vede la tua scheda. Per recuperarla su un altro telefono: nome «${esc(S.cloud.n)}» e il tuo PIN.</p>${bad?`<button class="btn sec" style="width:100%" data-act="cloudretry">Riprova adesso</button>`:""}`}
+function cloudCard(){return CLOUD?`<section class="card" id="cloudbox">${cloudInner()}</section>`:""}
+function updCloud(){const b=document.getElementById("cloudbox");if(b)b.innerHTML=cloudInner()}
+const pinIn=(id,ph)=>`<input id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="${ph}" style="text-align:center;letter-spacing:.5em;font-size:22px!important;margin-top:8px">`;
+function cloudOnSheet(){
+  if(!(S.name||"").trim()){toast("Prima dai un nome al personaggio.");return}
+  showSheet(`<h2 style="text-align:center">Scegli un PIN</h2><p class="sm" style="text-align:center">4 cifre da ricordare. Con il nome «${esc(S.name)}» serve per recuperare il personaggio su un altro telefono.</p>${pinIn("pin1","PIN")}${pinIn("pin2","Ripeti il PIN")}<div id="pinerr" class="note bad" style="display:none"></div><button class="btn" style="width:100%;margin-top:10px" data-act="cloudpin">Attiva</button><button class="btn sec" style="width:100%;margin-top:8px" data-act="close">Annulla</button>`);
+  setTimeout(()=>{try{document.getElementById("pin1").focus()}catch(e){}},300)}
+const pinErr=m=>{const e=document.getElementById("pinerr");if(e){e.style.display="block";e.textContent=m}};
+async function cloudPin(){
+  const a=(document.getElementById("pin1")||{}).value||"",b=(document.getElementById("pin2")||{}).value||"";
+  if(!/^\d{4}$/.test(a))return pinErr("Il PIN deve avere 4 cifre.");if(a!==b)return pinErr("I due PIN non sono uguali.");
+  pinErr("Controllo…");
+  try{const id=await cloudId(S.name,a),t=await CLOUD.anon(),ex=await FBX.get(t,"players/"+id);
+    if(ex)return pinErr("Questo nome e PIN sono già usati. Scegli un altro PIN, oppure usa «Recupera personaggio».");
+    S.cloud={id,n:S.name};save();closeSheet();render(1);await cloudPush();
+    toast(CST.err?"Attivato: salverò online appena possibile.":"Salvataggio online attivo.")}
+  catch(e){pinErr(e.code==="OFFLINE"?"Serve la connessione a internet. Riprova.":"Non riesco a collegarmi. Riprova tra poco.")}}
+function cloudRecSheet(){
+  if(!CLOUD)return;
+  showSheet(`<h2 style="text-align:center">Recupera personaggio</h2><p class="sm" style="text-align:center">Scrivi il nome del personaggio e il PIN che avevi scelto.</p><input id="recn" type="text" placeholder="Nome del personaggio" autocomplete="off" style="margin-top:8px">${pinIn("recp","PIN")}<div id="pinerr" class="note bad" style="display:none"></div><button class="btn" style="width:100%;margin-top:10px" data-act="cloudget">Recupera</button><button class="btn sec" style="width:100%;margin-top:8px" data-act="close">Annulla</button>`)}
+async function cloudGet(){
+  const n=((document.getElementById("recn")||{}).value||"").trim(),p=(document.getElementById("recp")||{}).value||"";
+  if(!n)return pinErr("Scrivi il nome del personaggio.");if(!/^\d{4}$/.test(p))return pinErr("Il PIN deve avere 4 cifre.");
+  pinErr("Cerco…");
+  try{const id=await cloudId(n,p),t=await CLOUD.anon(),doc=await FBX.get(t,"players/"+id);
+    if(!doc)return pinErr("Non trovo un personaggio con questo nome e PIN. Controlla e riprova.");
+    let o=null;try{o=JSON.parse(doc.data)}catch(e){}
+    if(!okState(o))return pinErr("Il salvataggio non si legge. Chiedi aiuto al Master.");
+    o=fixState(o);o.cloud={id,n:(o.cloud&&o.cloud.n)||doc.name||n};
+    const have=ROSTER.ids.find(x=>{const c=x===ROSTER.cur?S:readChar(x);return c&&c.cloud&&c.cloud.id===id});
+    if(have){if(have!==ROSTER.cur)switchChar(have);S=o}
+    else if(S.blank){S=o}
+    else{save();const nid=newId();ROSTER.ids.push(nid);ROSTER.cur=nid;S=o;saveRoster()}
+    try{localStorage.setItem(CK(ROSTER.cur),JSON.stringify(S))}catch(e){}hreset();
+    closeSheet();try{const ch=document.getElementById("chars");if(ch)ch.classList.remove("on")}catch(e){}
+    C=calc();render();toast(`Bentornato, ${S.name}!`);CST={busy:false,err:"",at:+doc.updated||0};updCloud()}
+  catch(e){pinErr(e.code==="OFFLINE"?"Serve la connessione a internet. Riprova.":"Non riesco a collegarmi. Riprova tra poco.")}}
+/* ---------- invio al Master ---------- */
+function masterData(){
+  C=calc();const it=x=>ITEMS[x.id]||{};
+  const d={v:1,t:Date.now(),n:S.name||"Senza nome",r:S.race,c:S.cls,sx:S.sex||"m",l:C.lvl,from:S.start||"",
+    pv:[pvNow(),C.pvMax],dc:C.prot,vel:C.vel,g:S.gold|0,
+    st:STATS.map(([k,nm])=>[nm,shownStat(k),C.st[k].mod]),
+    w:weapons().map(x=>[x.name,x.dmg,hitBonus(x),dmgBonus(x),x.kind==="d"?(x.range||0):-1]),
+    inv:(S.inv||[]).map(x=>[it(x).name||x.id,x.qty||1,x.on?1:0,it(x).code||""]),
+    ab:C.abs||[],sp:(S.spells&&S.spells[S.cls])||{},cd:Object.keys(S.cond||{}).filter(k=>S.cond[k]),
+    isp:S.insp|0,no:(S.notes||"").slice(0,1500)};
+  if(S.comp&&S.comp.name)d.cp=[S.comp.name,S.comp.pv,S.comp.max];
+  return d;
+}
+function masterCode(){const d=masterData();
+  const b=new TextEncoder().encode(JSON.stringify(d));let bin="";b.forEach(x=>bin+=String.fromCharCode(x));
+  return "CDG1."+btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+async function sendToMaster(){
+  const txt=`⚔️ Cronache di Gloria · scheda di ${S.name||"Senza nome"} (${S.race} ${S.cls}, livello ${C.lvl})\nMaster: copia tutto il messaggio e incollalo nella tua app (Scontro → Giocatori).\n\n${masterCode()}`;
+  try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){if(e&&e.name==="AbortError")return}
+  let ok=false;try{await navigator.clipboard.writeText(txt);ok=true}catch(e){}
+  showSheet(`<h2 style="text-align:center">Invia al Master</h2>${ok?`<div class="note">Messaggio copiato. Incollalo su WhatsApp (o dove scrivi al Master) e invialo.</div>`:`<div class="note">Tieni premuto sul testo, scegli «Seleziona tutto» e «Copia», poi incollalo su WhatsApp.</div>`}
+    <textarea readonly style="width:100%;min-height:140px;margin-top:8px;font-size:12px!important">${esc(txt)}</textarea>
+    <button class="btn sec" style="width:100%;margin-top:8px" data-act="close">Chiudi</button>`);
+}
 /* ---------- foto profilo ---------- */
 (function(){
   window.setPhotoBlob=function(file,done){
